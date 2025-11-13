@@ -1,11 +1,11 @@
-# Lesson 9: Advanced Features and Best Practices
+# Lesson 9: Advanced Features and Real-time Patterns
 
-**Duration**: 2 hours
+**Duration**: 3 hours
 **Level**: Advanced
 
 ## Overview
 
-Master advanced Devvit features including HTTP requests, media handling, app settings, and production-ready best practices.
+Master advanced Devvit features including HTTP requests, media handling, app settings, real-time patterns, game architecture, and production-ready best practices. This lesson covers the cutting edge of what's possible with Devvit.
 
 ## HTTP Requests
 
@@ -862,16 +862,752 @@ Devvit.addMenuItem({
 });
 ```
 
+## Real-time Features and Patterns
+
+While Devvit doesn't support traditional WebSockets, you can implement real-time-like experiences using polling, Redis pub/sub simulation, and smart state management.
+
+### Pattern 1: Polling-Based Real-time
+
+```typescript
+// In a custom post, poll for updates
+Devvit.addCustomPostType({
+  name: 'live-counter',
+  height: 'regular',
+  render: (context) => {
+    const [count, setCount] = context.useState(0);
+    const [isPolling, setIsPolling] = context.useState(true);
+
+    // Poll every 2 seconds
+    context.useInterval(async () => {
+      if (!isPolling) return;
+
+      const current = await context.redis.get('global-counter');
+      const newCount = Number(current || 0);
+
+      if (newCount !== count) {
+        setCount(newCount);
+      }
+    }, 2000);
+
+    const increment = async () => {
+      const newCount = await context.redis.incrBy('global-counter', 1);
+      setCount(newCount);
+    };
+
+    return (
+      <vstack padding="medium" alignment="center middle" gap="medium">
+        <text size="xxlarge" weight="bold">
+          {count}
+        </text>
+        <text size="small" color="neutral-content-weak">
+          Global counter (live updates)
+        </text>
+        <button onPress={increment}>Increment</button>
+        <button
+          onPress={() => setIsPolling(!isPolling)}
+          appearance="secondary"
+          size="small"
+        >
+          {isPolling ? 'Pause Updates' : 'Resume Updates'}
+        </button>
+      </vstack>
+    );
+  },
+});
+```
+
+### Pattern 2: Event Broadcasting via Redis
+
+```typescript
+interface BroadcastMessage {
+  type: string;
+  payload: any;
+  timestamp: number;
+  sender: string;
+}
+
+async function broadcast(
+  context: Context,
+  channel: string,
+  type: string,
+  payload: any
+): Promise<void> {
+  const user = await context.reddit.getCurrentUser();
+
+  const message: BroadcastMessage = {
+    type,
+    payload,
+    timestamp: Date.now(),
+    sender: user.username,
+  };
+
+  // Store message in a list
+  const key = `channel:${channel}:messages`;
+  const messagesStr = await context.redis.get(key);
+  const messages: BroadcastMessage[] = messagesStr ? JSON.parse(messagesStr) : [];
+
+  messages.push(message);
+
+  // Keep only last 100 messages
+  const limited = messages.slice(-100);
+
+  await context.redis.set(key, JSON.stringify(limited), {
+    expiration: new Date(Date.now() + 3600000), // 1 hour TTL
+  });
+
+  // Update last message timestamp for channel
+  await context.redis.set(`channel:${channel}:last-update`, String(Date.now()));
+}
+
+async function getNewMessages(
+  context: Context,
+  channel: string,
+  since: number
+): Promise<BroadcastMessage[]> {
+  const key = `channel:${channel}:messages`;
+  const messagesStr = await context.redis.get(key);
+  const messages: BroadcastMessage[] = messagesStr ? JSON.parse(messagesStr) : [];
+
+  return messages.filter(m => m.timestamp > since);
+}
+
+// Usage in custom post
+Devvit.addCustomPostType({
+  name: 'chat-room',
+  height: 'tall',
+  render: (context) => {
+    const [messages, setMessages] = context.useState<BroadcastMessage[]>([]);
+    const [lastCheck, setLastCheck] = context.useState(Date.now());
+
+    // Poll for new messages
+    context.useInterval(async () => {
+      const newMessages = await getNewMessages(context, 'global-chat', lastCheck);
+
+      if (newMessages.length > 0) {
+        setMessages([...messages, ...newMessages]);
+        setLastCheck(Date.now());
+      }
+    }, 1000);
+
+    const sendMessage = async (text: string) => {
+      await broadcast(context, 'global-chat', 'message', { text });
+    };
+
+    return (
+      <vstack padding="medium" gap="small">
+        <text size="large" weight="bold">Live Chat</text>
+
+        <vstack
+          height="300px"
+          backgroundColor="neutral-background-weak"
+          cornerRadius="medium"
+          padding="small"
+          gap="small"
+        >
+          {messages.map((msg, i) => (
+            <hstack key={i} gap="small">
+              <text weight="bold">{msg.sender}:</text>
+              <text>{msg.payload.text}</text>
+            </hstack>
+          ))}
+        </vstack>
+
+        <button onPress={() => {
+          // Would show a form to get message text
+          sendMessage('Hello!');
+        }}>
+          Send Message
+        </button>
+      </vstack>
+    );
+  },
+});
+```
+
+### Pattern 3: Presence Detection
+
+```typescript
+interface PresenceInfo {
+  userId: string;
+  username: string;
+  lastSeen: number;
+}
+
+async function updatePresence(context: Context, location: string): Promise<void> {
+  const user = await context.reddit.getCurrentUser();
+
+  const presenceKey = `presence:${location}`;
+  const presenceStr = await context.redis.get(presenceKey);
+  const presence: { [userId: string]: PresenceInfo } = presenceStr
+    ? JSON.parse(presenceStr)
+    : {};
+
+  presence[user.id] = {
+    userId: user.id,
+    username: user.username,
+    lastSeen: Date.now(),
+  };
+
+  await context.redis.set(presenceKey, JSON.stringify(presence), {
+    expiration: new Date(Date.now() + 300000), // 5 min TTL
+  });
+}
+
+async function getOnlineUsers(
+  context: Context,
+  location: string,
+  timeoutMs: number = 60000
+): Promise<PresenceInfo[]> {
+  const presenceKey = `presence:${location}`;
+  const presenceStr = await context.redis.get(presenceKey);
+
+  if (!presenceStr) return [];
+
+  const presence: { [userId: string]: PresenceInfo } = JSON.parse(presenceStr);
+  const cutoff = Date.now() - timeoutMs;
+
+  return Object.values(presence).filter(p => p.lastSeen > cutoff);
+}
+
+// Usage
+Devvit.addCustomPostType({
+  name: 'online-users',
+  height: 'regular',
+  render: (context) => {
+    const [onlineUsers, setOnlineUsers] = context.useState<PresenceInfo[]>([]);
+
+    // Update own presence every 30 seconds
+    context.useInterval(async () => {
+      await updatePresence(context, context.postId!);
+    }, 30000);
+
+    // Check for online users every 10 seconds
+    context.useInterval(async () => {
+      const users = await getOnlineUsers(context, context.postId!);
+      setOnlineUsers(users);
+    }, 10000);
+
+    return (
+      <vstack padding="medium" gap="small">
+        <text size="large" weight="bold">
+          Online Users ({onlineUsers.length})
+        </text>
+        {onlineUsers.map(user => (
+          <text key={user.userId}>• u/{user.username}</text>
+        ))}
+      </vstack>
+    );
+  },
+});
+```
+
+## Game Architecture Patterns
+
+Building games in Devvit requires special patterns to handle state, turns, and multiplayer.
+
+### Pattern 1: Turn-Based Game State
+
+```typescript
+interface GameState {
+  gameId: string;
+  players: Player[];
+  currentPlayerIndex: number;
+  board: any; // Game-specific board state
+  status: 'waiting' | 'in-progress' | 'finished';
+  winner?: string;
+  createdAt: number;
+  lastMove: number;
+}
+
+interface Player {
+  userId: string;
+  username: string;
+  score: number;
+}
+
+async function createGame(context: Context, gameId: string): Promise<GameState> {
+  const initialState: GameState = {
+    gameId,
+    players: [],
+    currentPlayerIndex: 0,
+    board: initializeBoard(), // Game-specific
+    status: 'waiting',
+    createdAt: Date.now(),
+    lastMove: Date.now(),
+  };
+
+  await context.redis.set(`game:${gameId}`, JSON.stringify(initialState));
+  return initialState;
+}
+
+async function joinGame(
+  context: Context,
+  gameId: string,
+  userId: string,
+  username: string
+): Promise<GameState | null> {
+  const gameStr = await context.redis.get(`game:${gameId}`);
+  if (!gameStr) return null;
+
+  const game: GameState = JSON.parse(gameStr);
+
+  // Check if already joined
+  if (game.players.some(p => p.userId === userId)) {
+    return game;
+  }
+
+  // Check if game is full
+  if (game.players.length >= 2) {
+    return null;
+  }
+
+  game.players.push({ userId, username, score: 0 });
+
+  // Start game when 2 players joined
+  if (game.players.length === 2) {
+    game.status = 'in-progress';
+  }
+
+  await context.redis.set(`game:${gameId}`, JSON.stringify(game));
+  return game;
+}
+
+async function makeMove(
+  context: Context,
+  gameId: string,
+  userId: string,
+  move: any
+): Promise<{ success: boolean; message: string; newState?: GameState }> {
+  const gameStr = await context.redis.get(`game:${gameId}`);
+  if (!gameStr) {
+    return { success: false, message: 'Game not found' };
+  }
+
+  const game: GameState = JSON.parse(gameStr);
+
+  // Validate it's player's turn
+  const currentPlayer = game.players[game.currentPlayerIndex];
+  if (currentPlayer.userId !== userId) {
+    return { success: false, message: 'Not your turn!' };
+  }
+
+  // Validate and apply move (game-specific logic)
+  const moveResult = applyMove(game, move);
+  if (!moveResult.valid) {
+    return { success: false, message: moveResult.error || 'Invalid move' };
+  }
+
+  // Update game state
+  game.board = moveResult.newBoard;
+  game.lastMove = Date.now();
+
+  // Check for win condition
+  const winCheck = checkWinCondition(game);
+  if (winCheck.hasWinner) {
+    game.status = 'finished';
+    game.winner = winCheck.winner;
+  } else {
+    // Next player's turn
+    game.currentPlayerIndex = (game.currentPlayerIndex + 1) % game.players.length;
+  }
+
+  await context.redis.set(`game:${gameId}`, JSON.stringify(game));
+
+  return { success: true, message: 'Move made', newState: game };
+}
+
+// Game-specific functions (implement based on your game)
+function initializeBoard(): any {
+  return {}; // e.g., chess board, tic-tac-toe grid
+}
+
+function applyMove(game: GameState, move: any): { valid: boolean; newBoard?: any; error?: string } {
+  // Validate and apply move to board
+  return { valid: true, newBoard: game.board };
+}
+
+function checkWinCondition(game: GameState): { hasWinner: boolean; winner?: string } {
+  // Check if someone won
+  return { hasWinner: false };
+}
+```
+
+### Pattern 2: Leaderboard with Rankings
+
+```typescript
+interface LeaderboardEntry {
+  userId: string;
+  username: string;
+  score: number;
+  wins: number;
+  losses: number;
+  lastPlayed: number;
+}
+
+async function updateLeaderboard(
+  context: Context,
+  userId: string,
+  username: string,
+  scoreChange: number,
+  won: boolean
+): Promise<void> {
+  const leaderboardKey = 'game:leaderboard';
+  const leaderboardStr = await context.redis.get(leaderboardKey);
+  const leaderboard: LeaderboardEntry[] = leaderboardStr
+    ? JSON.parse(leaderboardStr)
+    : [];
+
+  // Find or create entry
+  let entry = leaderboard.find(e => e.userId === userId);
+
+  if (!entry) {
+    entry = {
+      userId,
+      username,
+      score: 0,
+      wins: 0,
+      losses: 0,
+      lastPlayed: Date.now(),
+    };
+    leaderboard.push(entry);
+  }
+
+  // Update stats
+  entry.score += scoreChange;
+  entry.lastPlayed = Date.now();
+
+  if (won) {
+    entry.wins++;
+  } else {
+    entry.losses++;
+  }
+
+  // Sort by score
+  leaderboard.sort((a, b) => b.score - a.score);
+
+  // Keep top 100
+  const top100 = leaderboard.slice(0, 100);
+
+  await context.redis.set(leaderboardKey, JSON.stringify(top100));
+}
+
+async function getLeaderboard(
+  context: Context,
+  limit: number = 10
+): Promise<LeaderboardEntry[]> {
+  const leaderboardStr = await context.redis.get('game:leaderboard');
+  const leaderboard: LeaderboardEntry[] = leaderboardStr
+    ? JSON.parse(leaderboardStr)
+    : [];
+
+  return leaderboard.slice(0, limit);
+}
+
+async function getUserRank(context: Context, userId: string): Promise<number> {
+  const leaderboardStr = await context.redis.get('game:leaderboard');
+  const leaderboard: LeaderboardEntry[] = leaderboardStr
+    ? JSON.parse(leaderboardStr)
+    : [];
+
+  const index = leaderboard.findIndex(e => e.userId === userId);
+  return index === -1 ? -1 : index + 1;
+}
+```
+
+### Pattern 3: Matchmaking
+
+```typescript
+interface MatchmakingQueue {
+  players: QueuedPlayer[];
+}
+
+interface QueuedPlayer {
+  userId: string;
+  username: string;
+  queuedAt: number;
+  skillLevel?: number;
+}
+
+async function joinMatchmaking(
+  context: Context,
+  userId: string,
+  username: string
+): Promise<{ matched: boolean; gameId?: string; opponent?: string }> {
+  const queueKey = 'matchmaking:queue';
+  const queueStr = await context.redis.get(queueKey);
+  const queue: MatchmakingQueue = queueStr
+    ? JSON.parse(queueStr)
+    : { players: [] };
+
+  // Check if already in queue
+  if (queue.players.some(p => p.userId === userId)) {
+    return { matched: false };
+  }
+
+  // Try to find opponent
+  const availableOpponents = queue.players.filter(p => p.userId !== userId);
+
+  if (availableOpponents.length > 0) {
+    // Match with first available player
+    const opponent = availableOpponents[0];
+
+    // Remove opponent from queue
+    queue.players = queue.players.filter(p => p.userId !== opponent.userId);
+    await context.redis.set(queueKey, JSON.stringify(queue));
+
+    // Create game
+    const gameId = `game_${Date.now()}`;
+    const game = await createGame(context, gameId);
+    await joinGame(context, gameId, userId, username);
+    await joinGame(context, gameId, opponent.userId, opponent.username);
+
+    return {
+      matched: true,
+      gameId,
+      opponent: opponent.username,
+    };
+  } else {
+    // Add to queue
+    queue.players.push({
+      userId,
+      username,
+      queuedAt: Date.now(),
+    });
+
+    await context.redis.set(queueKey, JSON.stringify(queue));
+
+    return { matched: false };
+  }
+}
+
+async function leaveMatchmaking(context: Context, userId: string): Promise<void> {
+  const queueKey = 'matchmaking:queue';
+  const queueStr = await context.redis.get(queueKey);
+  const queue: MatchmakingQueue = queueStr
+    ? JSON.parse(queueStr)
+    : { players: [] };
+
+  queue.players = queue.players.filter(p => p.userId !== userId);
+
+  await context.redis.set(queueKey, JSON.stringify(queue));
+}
+```
+
+## Advanced State Management
+
+### Pattern 1: Global State with Context
+
+```typescript
+// Create a state management service
+interface AppState {
+  theme: 'light' | 'dark';
+  notifications: boolean;
+  lastSync: number;
+}
+
+async function getAppState(context: Context, userId: string): Promise<AppState> {
+  const key = `state:${userId}`;
+  const stateStr = await context.redis.get(key);
+
+  if (!stateStr) {
+    return {
+      theme: 'light',
+      notifications: true,
+      lastSync: Date.now(),
+    };
+  }
+
+  return JSON.parse(stateStr);
+}
+
+async function updateAppState(
+  context: Context,
+  userId: string,
+  updates: Partial<AppState>
+): Promise<AppState> {
+  const current = await getAppState(context, userId);
+  const newState = { ...current, ...updates, lastSync: Date.now() };
+
+  await context.redis.set(`state:${userId}`, JSON.stringify(newState));
+
+  return newState;
+}
+```
+
+### Pattern 2: Optimistic Updates
+
+```typescript
+// In custom post, update UI immediately, sync later
+Devvit.addCustomPostType({
+  name: 'optimistic-counter',
+  height: 'regular',
+  render: (context) => {
+    const [localCount, setLocalCount] = context.useState(0);
+    const [syncing, setSyncing] = context.useState(false);
+
+    // Load initial count
+    context.useAsync(async () => {
+      const count = await context.redis.get('counter');
+      setLocalCount(Number(count || 0));
+    });
+
+    const increment = async () => {
+      // Optimistic update
+      const newCount = localCount + 1;
+      setLocalCount(newCount);
+      setSyncing(true);
+
+      try {
+        // Sync to server
+        const serverCount = await context.redis.incrBy('counter', 1);
+
+        // If different from optimistic value, correct it
+        if (serverCount !== newCount) {
+          setLocalCount(serverCount);
+        }
+      } catch (error) {
+        // Rollback on error
+        setLocalCount(localCount);
+        context.ui.showToast('Failed to sync');
+      } finally {
+        setSyncing(false);
+      }
+    };
+
+    return (
+      <vstack padding="medium" alignment="center middle" gap="medium">
+        <text size="xxlarge">{localCount}</text>
+        {syncing && <text size="small">Syncing...</text>}
+        <button onPress={increment}>Increment</button>
+      </vstack>
+    );
+  },
+});
+```
+
+## Platform Limitations and Workarounds
+
+Understanding what Devvit **cannot** do helps you design better apps.
+
+### Limitation 1: No NPM Packages
+
+**Problem:** Can't use most npm libraries.
+
+**Workarounds:**
+1. Use Devvit's built-in APIs
+2. Implement functionality yourself (often simpler than you think)
+3. Call external APIs that do the work
+4. Use Web Views with full npm access
+
+```typescript
+// Instead of moment.js
+const formatDate = (date: Date): string => {
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
+};
+
+// Instead of lodash
+const debounce = <T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): ((...args: Parameters<T>) => void) => {
+  let timeout: NodeJS.Timeout | null = null;
+
+  return (...args: Parameters<T>) => {
+    if (timeout) clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
+};
+```
+
+### Limitation 2: No Persistent Connections
+
+**Problem:** No WebSockets, no long-polling.
+
+**Workarounds:**
+1. Short polling with `useInterval`
+2. Redis-based message passing
+3. Scheduled jobs for async work
+
+### Limitation 3: Execution Time Limits
+
+**Problem:** Functions timeout after 3-5 seconds.
+
+**Workarounds:**
+1. Break work into chunks
+2. Use scheduled jobs for heavy work
+3. Process in batches
+
+```typescript
+// Bad: Try to process everything
+async function processAllPosts(context: Context) {
+  const posts = await getAllPosts(); // Could be thousands
+  for (const post of posts) {
+    await process(post); // Times out!
+  }
+}
+
+// Good: Process in scheduled job with batches
+Devvit.addSchedulerJob({
+  name: 'processPosts',
+  cron: '*/5 * * * *', // Every 5 minutes
+  onRun: async (event, context) => {
+    // Process only 50 at a time
+    const offset = Number(await context.redis.get('process-offset') || '0');
+    const batch = await getPostsBatch(offset, 50);
+
+    for (const post of batch) {
+      await process(post);
+    }
+
+    // Save progress
+    await context.redis.set('process-offset', String(offset + 50));
+  },
+});
+```
+
+### Limitation 4: No File System
+
+**Problem:** Can't read/write local files.
+
+**Workarounds:**
+1. Use Redis for storage
+2. Use external APIs for file operations
+3. Use media upload API for images
+
+### Limitation 5: Limited HTTP Destinations
+
+**Problem:** Some domains may be blocked.
+
+**Workarounds:**
+1. Use well-known public APIs
+2. Proxy through your own server if needed
+3. Check Reddit's allowed domains list
+
+### Limitation 6: No Direct Database Access
+
+**Problem:** Can't connect to PostgreSQL, MySQL, etc.
+
+**Workarounds:**
+1. Use Redis for most use cases
+2. Call your own API that accesses the database
+3. Design around Redis's capabilities
+
 ## Key Takeaways
 
 1. **HTTP requests** - Use fetch() for external APIs
 2. **App settings** - User-configurable via devvit.yaml
 3. **Media handling** - Upload and use images
-4. **Performance** - Parallelize operations, cache data
-5. **Security** - Validate input, check permissions, protect secrets
-6. **Error handling** - Comprehensive try-catch, retry logic
-7. **Code organization** - Modular structure, type safety
-8. **Testing** - Debug logging, mock data
+4. **Real-time patterns** - Polling, Redis pub/sub simulation, presence detection
+5. **Game architecture** - Turn-based systems, leaderboards, matchmaking
+6. **Advanced state** - Global state management, optimistic updates
+7. **Platform limitations** - Understand constraints and workarounds
+8. **Performance** - Parallelize operations, cache data
+9. **Security** - Validate input, check permissions, protect secrets
+10. **Error handling** - Comprehensive try-catch, retry logic
 
 ## Checkpoint Questions
 
@@ -900,7 +1636,16 @@ Devvit.addMenuItem({
 
 ---
 
-➡️ **Continue to [Lesson 10: Testing, Debugging, and Deployment](./10-deployment.md)**
+➡️ **Continue to [Lesson 10A: Testing and Quality Assurance](./10a-testing.md)**
 
-**Estimated time to complete**: 2 hours
+**Estimated time to complete**: 3 hours
 **Prerequisites**: Lessons 1-8 completed
+
+**What you learned:**
+- HTTP requests and external API integration
+- App settings and configuration
+- Real-time patterns (polling, pub/sub, presence)
+- Game architecture (turn-based, leaderboards, matchmaking)
+- Advanced state management
+- Platform limitations and workarounds
+- Security and performance best practices

@@ -8,7 +8,7 @@ Devvit is Reddit's official developer platform that allows you to build applicat
 
 ## Course Structure
 
-This course is organized into 11 progressive lessons that will take you from beginner to advanced Devvit developer.
+This course is organized into 13 comprehensive lessons that will take you from beginner to production-ready Devvit developer.
 
 ### 📚 Lesson Plan
 
@@ -58,11 +58,12 @@ This course is organized into 11 progressive lessons that will take you from beg
    - Moderation actions
    - Duration: 2 hours
 
-7. **[State Management and Storage](./lessons/07-storage.md)**
+7. **[Advanced Redis and Data Patterns](./lessons/07-storage.md)**
    - Redis-backed key-value storage
-   - Data persistence patterns
-   - Best practices for state management
-   - Duration: 1.5 hours
+   - Advanced Redis patterns (transactions, race conditions)
+   - Data migrations and schema changes
+   - Memory management and optimization
+   - Duration: 2.5 hours
 
 8. **[Scheduler and Background Jobs](./lessons/08-scheduler.md)**
    - Setting up scheduled tasks
@@ -70,19 +71,36 @@ This course is organized into 11 progressive lessons that will take you from beg
    - Background job patterns
    - Duration: 1.5 hours
 
-9. **[Advanced Features and Best Practices](./lessons/09-advanced.md)**
+9. **[Advanced Features and Real-time](./lessons/09-advanced.md)**
    - HTTP requests and external APIs
-   - Media handling and assets
-   - Performance optimization
-   - Security best practices
-   - Duration: 2 hours
+   - Real-time features (WebSockets, pub/sub)
+   - Game architecture patterns
+   - Platform limitations and workarounds
+   - Advanced state management
+   - Duration: 3 hours
 
-10. **[Testing, Debugging, and Deployment](./lessons/10-deployment.md)**
-    - Local testing strategies
-    - Debugging techniques
-    - Publishing your app
-    - Versioning and updates
-    - Duration: 1.5 hours
+10. **Production Readiness** (Three-part lesson)
+
+    **10A. [Testing and Quality Assurance](./lessons/10a-testing.md)**
+    - Unit testing strategies
+    - Integration testing with Redis
+    - Mocking Reddit API calls
+    - CI/CD pipelines
+    - Duration: 2 hours
+
+    **10B. [Debugging and Monitoring](./lessons/10b-debugging.md)**
+    - Advanced debugging techniques
+    - Error tracking and monitoring
+    - Analytics and performance monitoring
+    - Production issue diagnosis
+    - Duration: 2 hours
+
+    **10C. [Deployment and Growth](./lessons/10c-deployment.md)**
+    - Deployment strategies
+    - Feature flags and gradual rollouts
+    - Reddit Developer Funds and monetization
+    - User acquisition and growth
+    - Duration: 2 hours
 
 ## Prerequisites
 
@@ -95,9 +113,9 @@ Before starting this course, you should have:
 
 ## Estimated Time
 
-- **Total course time**: 16.5-19 hours
+- **Total course time**: 24-27 hours
 - **Recommended pace**: 2-3 lessons per week
-- **Expected completion**: 4-5 weeks
+- **Expected completion**: 5-7 weeks
 - **Note**: Lesson 5B (Web Views) is optional if you only need Blocks UI
 
 ## Learning Approach

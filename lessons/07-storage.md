@@ -1,11 +1,11 @@
-# Lesson 7: State Management and Storage
+# Lesson 7: Advanced Redis and Data Patterns
 
-**Duration**: 1.5 hours
-**Level**: Intermediate
+**Duration**: 2.5 hours
+**Level**: Intermediate to Advanced
 
 ## Overview
 
-Since Devvit functions are stateless, you need persistent storage to maintain data between executions. This lesson covers Redis storage, data patterns, and best practices.
+Since Devvit functions are stateless, you need persistent storage to maintain data between executions. This lesson covers Redis storage comprehensively: from basics to advanced patterns including race conditions, transactions, data migrations, and production-ready strategies.
 
 ## Why Redis?
 
@@ -667,6 +667,604 @@ Devvit.addMenuItem({
 export default Devvit;
 ```
 
+## Advanced Redis Patterns
+
+### Race Conditions and Atomic Operations
+
+Race conditions occur when multiple users or processes access the same data simultaneously.
+
+#### Problem: Non-Atomic Updates
+
+```typescript
+// ❌ RACE CONDITION - Don't do this!
+Devvit.addMenuItem({
+  label: 'Claim Reward',
+  location: 'post',
+  onPress: async (event, context) => {
+    // User A and User B both click at the same time
+    const balance = Number(await context.redis.get('pool') || '1000');
+
+    if (balance >= 100) {
+      // Both see balance = 1000
+      // Both pass the check
+      await context.redis.set('pool', String(balance - 100));
+      // Pool now = 900, but should be 800!
+
+      context.ui.showToast('Claimed 100 coins!');
+    }
+  },
+});
+```
+
+**What happens:**
+1. User A reads balance: 1000
+2. User B reads balance: 1000 (simultaneously)
+3. User A writes: 900
+4. User B writes: 900 (overwrites A's change!)
+5. Result: 100 coins disappeared
+
+#### Solution 1: Use Atomic Operations
+
+```typescript
+// ✅ ATOMIC - Safe from race conditions
+Devvit.addMenuItem({
+  label: 'Claim Reward (Safe)',
+  location: 'post',
+  onPress: async (event, context) => {
+    try {
+      // Atomic decrement
+      const newBalance = await context.redis.incrBy('pool', -100);
+
+      if (newBalance < 0) {
+        // Oops, went negative, roll back
+        await context.redis.incrBy('pool', 100);
+        context.ui.showToast('Not enough coins in pool');
+        return;
+      }
+
+      context.ui.showToast(`Claimed! Pool now at ${newBalance}`);
+    } catch (error) {
+      context.ui.showToast('Failed to claim');
+    }
+  },
+});
+```
+
+#### Solution 2: Check-and-Set Pattern with Versioning
+
+```typescript
+interface VersionedData {
+  value: number;
+  version: number;
+}
+
+async function safeUpdate(
+  context: Context,
+  key: string,
+  updateFn: (current: number) => number,
+  maxRetries: number = 3
+): Promise<boolean> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    // Get current value with version
+    const dataStr = await context.redis.get(key);
+    const data: VersionedData = dataStr
+      ? JSON.parse(dataStr)
+      : { value: 0, version: 0 };
+
+    // Calculate new value
+    const newValue = updateFn(data.value);
+    const newData: VersionedData = {
+      value: newValue,
+      version: data.version + 1,
+    };
+
+    // Try to save with version check
+    const versionKey = `${key}:version`;
+    const currentVersion = await context.redis.get(versionKey);
+
+    if (currentVersion === String(data.version)) {
+      // Version matches, safe to update
+      await context.redis.set(key, JSON.stringify(newData));
+      await context.redis.set(versionKey, String(newData.version));
+      return true;
+    }
+
+    // Version mismatch, someone else updated, retry
+    console.log(`Version conflict on ${key}, retrying...`);
+    await new Promise(resolve => setTimeout(resolve, 50 * attempt));
+  }
+
+  return false; // Failed after retries
+}
+
+// Usage
+Devvit.addMenuItem({
+  label: 'Safe Complex Update',
+  location: 'post',
+  onPress: async (event, context) => {
+    const success = await safeUpdate(
+      context,
+      'complex-data',
+      (current) => current + 10
+    );
+
+    if (success) {
+      context.ui.showToast('Updated successfully');
+    } else {
+      context.ui.showToast('Update failed, too much contention');
+    }
+  },
+});
+```
+
+#### Solution 3: Distributed Locks
+
+```typescript
+async function acquireLock(
+  context: Context,
+  lockKey: string,
+  ttlMs: number = 5000
+): Promise<boolean> {
+  const lockValue = `${Date.now()}_${Math.random()}`;
+  const acquired = await context.redis.set(lockKey, lockValue, {
+    expiration: new Date(Date.now() + ttlMs),
+  });
+
+  // Check if we got the lock (should return null if key existed)
+  const current = await context.redis.get(lockKey);
+  return current === lockValue;
+}
+
+async function releaseLock(context: Context, lockKey: string): Promise<void> {
+  await context.redis.del(lockKey);
+}
+
+async function withLock<T>(
+  context: Context,
+  lockKey: string,
+  operation: () => Promise<T>,
+  maxWaitMs: number = 3000
+): Promise<T | null> {
+  const start = Date.now();
+
+  // Try to acquire lock
+  while (Date.now() - start < maxWaitMs) {
+    if (await acquireLock(context, lockKey)) {
+      try {
+        return await operation();
+      } finally {
+        await releaseLock(context, lockKey);
+      }
+    }
+
+    // Wait before retry
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  return null; // Couldn't acquire lock
+}
+
+// Usage
+Devvit.addMenuItem({
+  label: 'Locked Operation',
+  location: 'post',
+  onPress: async (event, context) => {
+    const result = await withLock(
+      context,
+      `lock:post:${event.targetId}`,
+      async () => {
+        // Only one user can execute this at a time
+        const data = await context.redis.get(`data:${event.targetId}`);
+        const parsed = JSON.parse(data || '{"count": 0}');
+        parsed.count++;
+        await context.redis.set(`data:${event.targetId}`, JSON.stringify(parsed));
+        return parsed.count;
+      }
+    );
+
+    if (result !== null) {
+      context.ui.showToast(`Count: ${result}`);
+    } else {
+      context.ui.showToast('Could not acquire lock');
+    }
+  },
+});
+```
+
+### Data Migrations
+
+As your app evolves, you'll need to migrate data to new schemas.
+
+#### Migration Strategy 1: Versioned Data
+
+```typescript
+interface DataV1 {
+  version: 1;
+  username: string;
+  score: number;
+}
+
+interface DataV2 {
+  version: 2;
+  username: string;
+  score: number;
+  achievements: string[];
+  joinedAt: number;
+}
+
+type UserData = DataV1 | DataV2;
+
+async function getUserData(context: Context, userId: string): Promise<DataV2> {
+  const key = `user:${userId}`;
+  const dataStr = await context.redis.get(key);
+
+  if (!dataStr) {
+    // New user, return v2 with defaults
+    return {
+      version: 2,
+      username: 'Unknown',
+      score: 0,
+      achievements: [],
+      joinedAt: Date.now(),
+    };
+  }
+
+  const data = JSON.parse(dataStr) as UserData;
+
+  // Migrate v1 to v2
+  if (data.version === 1) {
+    const migrated: DataV2 = {
+      version: 2,
+      username: data.username,
+      score: data.score,
+      achievements: [], // New field
+      joinedAt: Date.now(), // New field
+    };
+
+    // Save migrated data
+    await context.redis.set(key, JSON.stringify(migrated));
+    console.log(`Migrated user ${userId} from v1 to v2`);
+
+    return migrated;
+  }
+
+  return data as DataV2;
+}
+```
+
+#### Migration Strategy 2: Background Migration Job
+
+```typescript
+// Scheduled job to migrate all users
+Devvit.addSchedulerJob({
+  name: 'migrateUsersToV2',
+  cron: '0 2 * * *', // Run daily at 2 AM
+  onRun: async (event, context) => {
+    // Get list of all user keys (you'd need to track these)
+    const userListStr = await context.redis.get('all-users');
+    const userIds: string[] = JSON.parse(userListStr || '[]');
+
+    let migrated = 0;
+    let errors = 0;
+
+    for (const userId of userIds) {
+      try {
+        const data = await getUserData(context, userId); // Uses migration logic above
+        if (data.version === 2) {
+          migrated++;
+        }
+      } catch (error) {
+        console.error(`Failed to migrate user ${userId}:`, error);
+        errors++;
+      }
+
+      // Rate limit: wait between migrations
+      if (migrated % 10 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    console.log(`Migration complete: ${migrated} users migrated, ${errors} errors`);
+
+    // Track migration progress
+    await context.redis.set('migration:v2:complete', String(Date.now()));
+  },
+});
+```
+
+#### Migration Strategy 3: Lazy Migration
+
+```typescript
+// Migrate on read, write back on write
+async function getLegacyCompatibleData(
+  context: Context,
+  key: string
+): Promise<DataV2> {
+  const dataStr = await context.redis.get(key);
+
+  if (!dataStr) {
+    return createDefaultV2Data();
+  }
+
+  const data = JSON.parse(dataStr);
+
+  // Check for old schema (no version field)
+  if (!data.version) {
+    // This is v1 (before versioning)
+    return {
+      version: 2,
+      username: data.name || 'Unknown', // Field name changed
+      score: data.points || 0, // Field name changed
+      achievements: [],
+      joinedAt: Date.now(),
+    };
+  }
+
+  if (data.version === 1) {
+    return migrateV1ToV2(data);
+  }
+
+  return data;
+}
+
+async function saveData(context: Context, key: string, data: DataV2): Promise<void> {
+  // Always save as v2
+  await context.redis.set(key, JSON.stringify(data));
+}
+```
+
+### Advanced Memory Management
+
+#### Pattern 1: Sliding Window for Time-Series Data
+
+```typescript
+interface TimeSeriesEntry {
+  timestamp: number;
+  value: number;
+}
+
+async function addToTimeSeriesWindow(
+  context: Context,
+  key: string,
+  value: number,
+  windowMs: number = 3600000 // 1 hour
+): Promise<void> {
+  const now = Date.now();
+  const dataStr = await context.redis.get(key);
+  const entries: TimeSeriesEntry[] = dataStr ? JSON.parse(dataStr) : [];
+
+  // Add new entry
+  entries.push({ timestamp: now, value });
+
+  // Remove entries outside window
+  const cutoff = now - windowMs;
+  const filtered = entries.filter(e => e.timestamp > cutoff);
+
+  // Limit to last 1000 entries even within window
+  const limited = filtered.slice(-1000);
+
+  await context.redis.set(key, JSON.stringify(limited));
+}
+
+async function getTimeSeriesStats(
+  context: Context,
+  key: string
+): Promise<{ count: number; sum: number; avg: number }> {
+  const dataStr = await context.redis.get(key);
+  const entries: TimeSeriesEntry[] = dataStr ? JSON.parse(dataStr) : [];
+
+  const sum = entries.reduce((acc, e) => acc + e.value, 0);
+
+  return {
+    count: entries.length,
+    sum,
+    avg: entries.length > 0 ? sum / entries.length : 0,
+  };
+}
+
+// Usage: Track post views over last hour
+Devvit.addMenuItem({
+  label: 'View Stats (Last Hour)',
+  location: 'post',
+  onPress: async (event, context) => {
+    const key = `views:${event.targetId}`;
+
+    // Record this view
+    await addToTimeSeriesWindow(context, key, 1);
+
+    // Get stats
+    const stats = await getTimeSeriesStats(context, key);
+
+    context.ui.showToast(
+      `Views (last hour): ${stats.count}\nAvg: ${stats.avg.toFixed(2)}`
+    );
+  },
+});
+```
+
+#### Pattern 2: Circular Buffer
+
+```typescript
+interface CircularBuffer<T> {
+  items: T[];
+  maxSize: number;
+  nextIndex: number;
+}
+
+async function addToCircularBuffer<T>(
+  context: Context,
+  key: string,
+  item: T,
+  maxSize: number = 100
+): Promise<void> {
+  const dataStr = await context.redis.get(key);
+  const buffer: CircularBuffer<T> = dataStr
+    ? JSON.parse(dataStr)
+    : { items: [], maxSize, nextIndex: 0 };
+
+  // Update max size if changed
+  buffer.maxSize = maxSize;
+
+  // Add item at next index
+  if (buffer.items.length < buffer.maxSize) {
+    buffer.items.push(item);
+  } else {
+    buffer.items[buffer.nextIndex] = item;
+  }
+
+  // Advance index (wrap around)
+  buffer.nextIndex = (buffer.nextIndex + 1) % buffer.maxSize;
+
+  await context.redis.set(key, JSON.stringify(buffer));
+}
+
+async function getCircularBufferItems<T>(
+  context: Context,
+  key: string
+): Promise<T[]> {
+  const dataStr = await context.redis.get(key);
+  if (!dataStr) return [];
+
+  const buffer: CircularBuffer<T> = JSON.parse(dataStr);
+
+  // Return items in chronological order
+  const { items, nextIndex, maxSize } = buffer;
+
+  if (items.length < maxSize) {
+    return items;
+  }
+
+  // Reorder: items from nextIndex to end, then start to nextIndex
+  return [...items.slice(nextIndex), ...items.slice(0, nextIndex)];
+}
+
+// Usage: Keep last 50 errors
+async function logError(context: Context, error: Error): Promise<void> {
+  await addToCircularBuffer(
+    context,
+    'app:recent-errors',
+    {
+      message: error.message,
+      stack: error.stack,
+      timestamp: Date.now(),
+    },
+    50
+  );
+}
+```
+
+#### Pattern 3: Data Compression
+
+```typescript
+// For large datasets, compress before storing
+async function setCompressed(
+  context: Context,
+  key: string,
+  data: any
+): Promise<void> {
+  const json = JSON.stringify(data);
+
+  // Simple compression: remove whitespace
+  const compressed = json;
+
+  // For real compression, you'd use a library (if available)
+  // const compressed = compress(json);
+
+  await context.redis.set(key, compressed);
+}
+
+async function getDecompressed<T>(context: Context, key: string): Promise<T | null> {
+  const compressed = await context.redis.get(key);
+  if (!compressed) return null;
+
+  // const json = decompress(compressed);
+  const json = compressed;
+
+  return JSON.parse(json);
+}
+
+// Pattern 4: Sampling for high-frequency data
+async function sampleAndStore(
+  context: Context,
+  key: string,
+  value: number,
+  sampleRate: number = 0.1 // Keep 10% of data
+): Promise<void> {
+  if (Math.random() < sampleRate) {
+    await addToTimeSeriesWindow(context, key, value);
+  }
+}
+```
+
+### Data Backup and Recovery
+
+#### Pattern 1: Periodic Snapshots
+
+```typescript
+interface Snapshot {
+  timestamp: number;
+  keys: { [key: string]: string };
+}
+
+async function createSnapshot(context: Context, keyPattern: string): Promise<string> {
+  // In production, you'd need a way to list keys by pattern
+  // For this example, we track keys manually
+  const keyListStr = await context.redis.get('tracked-keys');
+  const keys: string[] = JSON.parse(keyListStr || '[]');
+
+  const snapshot: Snapshot = {
+    timestamp: Date.now(),
+    keys: {},
+  };
+
+  for (const key of keys) {
+    const value = await context.redis.get(key);
+    if (value) {
+      snapshot.keys[key] = value;
+    }
+  }
+
+  const snapshotId = `snapshot:${Date.now()}`;
+  await context.redis.set(snapshotId, JSON.stringify(snapshot), {
+    expiration: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+  });
+
+  return snapshotId;
+}
+
+async function restoreFromSnapshot(
+  context: Context,
+  snapshotId: string
+): Promise<number> {
+  const snapshotStr = await context.redis.get(snapshotId);
+  if (!snapshotStr) {
+    throw new Error('Snapshot not found');
+  }
+
+  const snapshot: Snapshot = JSON.parse(snapshotStr);
+  let restored = 0;
+
+  for (const [key, value] of Object.entries(snapshot.keys)) {
+    await context.redis.set(key, value);
+    restored++;
+  }
+
+  return restored;
+}
+
+// Scheduled backup
+Devvit.addSchedulerJob({
+  name: 'dailyBackup',
+  cron: '0 3 * * *', // 3 AM daily
+  onEvent: async (event, context) => {
+    const snapshotId = await createSnapshot(context, 'app:*');
+    console.log(`Backup created: ${snapshotId}`);
+
+    await context.redis.set('last-backup-id', snapshotId);
+  },
+});
+```
+
 ## Best Practices
 
 ### 1. Type Safety
@@ -858,6 +1456,14 @@ Let users save their favorite posts. Store per-user and display their list.
 
 ➡️ **Continue to [Lesson 8: Scheduler and Background Jobs](./08-scheduler.md)**
 
-**Estimated time to complete**: 1.5 hours
+**Estimated time to complete**: 2.5 hours
 **Practice exercises**: 3 suggested projects
 **Prerequisites**: Lessons 1-6 completed
+
+**What you learned:**
+- Basic and advanced Redis operations
+- Race condition handling and atomic operations
+- Distributed locks
+- Data migrations strategies
+- Advanced memory management patterns
+- Backup and recovery
