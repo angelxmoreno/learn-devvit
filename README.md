@@ -8,7 +8,7 @@ Devvit is Reddit's official developer platform that allows you to build applicat
 
 ## Course Structure
 
-This course is organized into 10 progressive lessons that will take you from beginner to advanced Devvit developer.
+This course is organized into 11 progressive lessons that will take you from beginner to advanced Devvit developer.
 
 ### 📚 Lesson Plan
 
@@ -36,12 +36,21 @@ This course is organized into 10 progressive lessons that will take you from beg
    - Context and runtime environment
    - Duration: 1.5 hours
 
-5. **[Working with Forms and UI](./lessons/05-forms-and-ui.md)**
+5. **UI Development** (Two-part lesson)
+
+   **5A. [Forms and Blocks UI](./lessons/05a-forms-and-blocks.md)**
    - Building custom forms
-   - Creating interactive UI components
-   - Handling user input
-   - Custom post types
+   - Creating interactive UI with Blocks
+   - Inline feed experiences
+   - Custom post types (Blocks approach)
    - Duration: 2 hours
+
+   **5B. [Web Views and Advanced UI](./lessons/05b-web-views.md)**
+   - Building full web applications
+   - React, vanilla JS, or other frameworks
+   - Communication between Devvit and web views
+   - Complex interactive experiences
+   - Duration: 2.5 hours
 
 6. **[Reddit API Integration](./lessons/06-reddit-api.md)**
    - Working with posts, comments, and subreddits
@@ -86,9 +95,10 @@ Before starting this course, you should have:
 
 ## Estimated Time
 
-- **Total course time**: 14-16 hours
+- **Total course time**: 16.5-19 hours
 - **Recommended pace**: 2-3 lessons per week
-- **Expected completion**: 3-4 weeks
+- **Expected completion**: 4-5 weeks
+- **Note**: Lesson 5B (Web Views) is optional if you only need Blocks UI
 
 ## Learning Approach
 

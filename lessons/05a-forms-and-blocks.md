@@ -1,11 +1,19 @@
-# Lesson 5: Working with Forms and UI
+# Lesson 5A: Working with Forms and Blocks UI
 
 **Duration**: 2 hours
 **Level**: Intermediate
 
+> **Note**: This is Part A of a two-part lesson on Devvit UIs:
+> - **Lesson 5A** (this lesson): Forms and Blocks UI - inline feed experiences
+> - **[Lesson 5B](./05b-web-views.md)**: Web Views - full web applications
+>
+> Learn about both approaches to choose the right one for your project!
+
 ## Overview
 
-In this lesson, you'll learn how to create interactive user interfaces in Devvit. You'll master forms for user input and explore custom post types for rich, interactive experiences.
+In this lesson, you'll learn how to create interactive user interfaces using Devvit's **Blocks** approach. You'll master forms for user input and build custom post types that render directly in Reddit feeds.
+
+Blocks use a React-like syntax with Devvit's component library, perfect for experiences that should appear inline as users scroll.
 
 ## Forms: Collecting User Input
 
@@ -1035,6 +1043,23 @@ Devvit.addCustomPostType({
 
 </details>
 
+## Blocks vs. Web Views: Which Should You Use?
+
+**Use Blocks (this lesson) when:**
+- ✅ Users should see content while scrolling the feed
+- ✅ Simple interactions (voting, buttons, basic displays)
+- ✅ You want the fastest development time
+- ✅ Mobile-first experience is critical
+- ✅ Devvit's components meet your needs
+
+**Use Web Views (next lesson) when:**
+- ✅ You need complex UI (canvas, charts, advanced games)
+- ✅ You want to use existing web libraries (React, D3.js, etc.)
+- ✅ You need precise styling control with custom CSS
+- ✅ The experience benefits from opening in a focused view
+
+**Not sure?** Start with Blocks - they're simpler and cover 80% of use cases. You can always upgrade to Web Views later.
+
 ## Additional Resources
 
 - [Forms Documentation](https://developers.reddit.com/docs/forms)
@@ -1043,7 +1068,7 @@ Devvit.addCustomPostType({
 
 ---
 
-➡️ **Continue to [Lesson 6: Reddit API Integration](./06-reddit-api.md)**
+➡️ **Continue to [Lesson 5B: Web Views and Advanced UI](./05b-web-views.md)** to learn about building full web applications, or skip to [Lesson 6: Reddit API Integration](./06-reddit-api.md)
 
 **Estimated time to complete**: 2 hours
 **Practice exercises**: 2 hands-on challenges
