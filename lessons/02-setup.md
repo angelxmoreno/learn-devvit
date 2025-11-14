@@ -110,41 +110,35 @@ If you get an execution policy error:
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-## Step 3: Authenticate with Reddit
+## Step 3: Understanding Authentication
 
-Before you can create apps, you need to link the CLI with your Reddit account.
+Unlike many development platforms, Devvit handles authentication through its web-based project creation wizard (which we'll use in Step 5). You don't need to run a separate `devvit login` command before getting started.
 
-### Login command:
+### How Authentication Works:
 
-```bash
-devvit login
-```
+When you visit `https://developers.reddit.com/new` (covered in Step 5), the wizard will:
+1. Ask you to log in to Reddit (or use your existing session)
+2. Authorize the Devvit platform
+3. Generate a unique authentication token
+4. Save the token to `~/.devvit/token`
+5. Create your project all in one flow
 
-This will:
-1. Open your browser
-2. Ask you to authorize the Devvit CLI
-3. Redirect back with confirmation
-4. Store your credentials locally
+### Alternative: Manual Login (Optional)
 
-### Verify authentication:
+If you're already authenticated and want to verify your login status:
 
 ```bash
 devvit whoami
 ```
 
-You should see your Reddit username.
+This shows your currently authenticated Reddit username.
 
-### Troubleshooting Login:
+To manually log in (typically not needed for first-time setup):
+```bash
+devvit login
+```
 
-**Browser doesn't open:**
-- Copy the URL from the terminal and paste into your browser
-
-**Already logged in elsewhere:**
-- Use `devvit logout` first, then login again
-
-**Permission denied:**
-- Ensure you're logged into Reddit in your browser
-- Check that you have 2FA enabled if required
+**Note:** For most users, authentication happens automatically through the web wizard in Step 5, so you can skip manual login.
 
 ## Step 4: Set Up Your IDE
 
@@ -200,29 +194,59 @@ Create or update `.vscode/settings.json` in your workspace:
 }
 ```
 
-## Step 5: Create Your First Project
+## Step 5: Create Your First Project Using the Web Wizard
 
-Now that everything is installed, let's create a project to verify your setup.
+Devvit uses a web-based wizard to help you create your first project. This wizard will authenticate you and generate the necessary commands.
 
-### Create a new app:
+### Start the project creation wizard:
 
-```bash
-devvit new my-first-app
-```
+1. **Open your browser** and visit: `https://developers.reddit.com/new`
 
-You'll be prompted with several questions:
+2. **Choose a template:**
+   - For this lesson, select "Empty" or "Hello World"
+   - Other available templates: React, menu-action, scheduled-post, custom-post, etc.
 
-**1. Select a template:**
-- Choose "Empty" for this lesson
-- Other templates: `menu-action`, `scheduled-post`, `custom-post`, etc.
+3. **Go through the wizard:**
+   - Create or connect your Reddit account (if not already logged in)
+   - Authorize Reddit Developers to access your account
+   - The wizard will generate custom commands for you
 
-**2. Project name:**
-- Default is fine (or customize)
+4. **Follow the terminal instructions:**
+   - The wizard will display commands to copy and paste into your terminal
+   - These commands will authenticate you and create your project
+   - Example commands you might see:
+   ```bash
+   npx devvit init <your-unique-code>
+   cd my-first-app
+   npm install
+   ```
 
-**3. Description:**
-- Optional, add a brief description
+5. **On success**, you should see output like:
+   ```
+   Your Devvit authentication token has been saved to ~/.devvit/token
+   Fetching and extracting the template...
+   Cutting the template to the target directory...
+   🔧 Installing dependencies...
+   🚀🚀🚀 Devvit app successfully initialized!
+   ┌────────────────────────────────────────────────────┐
+   │ • `cd my-app` to open your project directory       │
+   │ • `npm run dev` to develop in your test community  │
+   └────────────────────────────────────────────────────┘
+   ```
 
-### Project structure created:
+**Important Notes:**
+- Each wizard session generates a unique authentication code
+- The code is one-time use and expires quickly
+- If the wizard times out, start over at `https://developers.reddit.com/new`
+- The wizard handles both authentication AND project creation
+
+## Step 6: Verify Project Structure
+
+After the wizard completes, let's verify what was created:
+
+### Project structure:
+
+The wizard creates a standard Devvit project with this structure:
 
 ```
 my-first-app/
@@ -234,19 +258,9 @@ my-first-app/
 └── .gitignore           # Git ignore rules
 ```
 
-### Navigate to your project:
+The wizard already runs `npm install` for you, so dependencies are ready to use.
 
-```bash
-cd my-first-app
-```
-
-### Install dependencies:
-
-```bash
-npm install
-```
-
-## Step 6: Understand the Project Structure
+## Step 7: Understand the Project Structure
 
 Let's explore what was created:
 
@@ -317,7 +331,7 @@ export default Devvit;
 
 This is where you'll write your app logic.
 
-## Step 7: Verify Your Setup
+## Step 8: Verify Your Setup
 
 Let's ensure everything works by running the development server.
 
@@ -363,15 +377,17 @@ You'll see the **Devvit Playground** - a local environment for testing your app 
 
 Press `Ctrl+C` in the terminal.
 
-## Step 8: Understanding CLI Commands
+## Step 9: Understanding CLI Commands
 
 Here are the essential Devvit CLI commands you'll use:
 
 ### Development Commands:
 
 ```bash
-# Create a new app
-devvit new <app-name>
+# Initialize and create a new app (via web wizard)
+# Visit https://developers.reddit.com/new and follow the wizard
+# The wizard will provide a command like:
+npx devvit init <your-code>
 
 # Start development server
 devvit dev
@@ -422,7 +438,7 @@ devvit help
 devvit help <command>
 ```
 
-## Step 9: Configure Git (Optional but Recommended)
+## Step 10: Configure Git (Optional but Recommended)
 
 Version control is essential for managing your code.
 
@@ -448,6 +464,14 @@ git push -u origin main
 ```
 
 ## Common Setup Issues
+
+### Issue: `Invalid code provided` error
+
+**Solution:**
+- This means the authentication code has expired or is invalid
+- Visit `https://developers.reddit.com/new` to get a fresh code
+- The wizard provides a one-time code that expires quickly
+- Copy and paste the exact command the wizard provides
 
 ### Issue: `command not found: devvit`
 
@@ -483,12 +507,12 @@ Verify your setup is complete:
 
 - [ ] Node.js 18+ installed (`node --version`)
 - [ ] npm installed and working (`npm --version`)
-- [ ] Devvit CLI installed (`devvit --version`)
-- [ ] Authenticated with Reddit (`devvit whoami`)
 - [ ] VS Code installed with recommended extensions
-- [ ] Test project created (`devvit new my-first-app`)
-- [ ] Dependencies installed (`npm install`)
-- [ ] Dev server runs successfully (`devvit dev`)
+- [ ] Visited `https://developers.reddit.com/new` and completed wizard
+- [ ] Project created and authenticated successfully
+- [ ] Dependencies installed (wizard does this automatically)
+- [ ] Can navigate to project directory (`cd my-first-app`)
+- [ ] Dev server runs successfully (`npm run dev` or `devvit dev`)
 - [ ] Can access playground at `http://localhost:3000`
 - [ ] Git initialized (optional)
 
@@ -508,16 +532,17 @@ With your environment set up, you're ready to build your first Devvit app!
 ## Key Takeaways
 
 1. **Node.js 18+** is required for Devvit development
-2. **Devvit CLI** is installed globally and handles all operations
-3. **Authentication** links your CLI to your Reddit account
-4. **Project structure** follows standard TypeScript patterns
-5. **Dev server** provides local testing environment
-6. **VS Code** offers the best TypeScript development experience
+2. **Web wizard** at `developers.reddit.com/new` is the starting point for creating projects
+3. **Wizard provides authentication** and generates project creation commands
+4. **Authentication codes** are one-time use and expire quickly
+5. **Project structure** follows standard TypeScript patterns
+6. **Dev server** provides local testing environment
+7. **VS Code** offers the best TypeScript development experience
 
 ## Checkpoint Questions
 
 1. What is the minimum Node.js version required for Devvit?
-2. What command creates a new Devvit project?
+2. What is the first step to create a new Devvit project?
 3. Where does your app's code live in the project structure?
 4. What command starts the local development server?
 5. What URL is used to access the local playground?
@@ -526,7 +551,7 @@ With your environment set up, you're ready to build your first Devvit app!
 <summary>Click to see answers</summary>
 
 1. Node.js 18.x or higher
-2. `devvit new <app-name>`
+2. Visit `https://developers.reddit.com/new` and complete the web wizard
 3. `src/main.tsx` (or `src/main.ts`)
 4. `devvit dev` or `npm run dev`
 5. `http://localhost:3000`
