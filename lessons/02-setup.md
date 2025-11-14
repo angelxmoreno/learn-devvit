@@ -69,46 +69,40 @@ node --version   # Should show v18.x.x or higher
 npm --version    # Should show 9.x.x or higher
 ```
 
-## Step 2: Install Devvit CLI
+## Step 2: Understanding npx (No Installation Needed!)
 
-The Devvit CLI is your main tool for creating, testing, and deploying Devvit apps.
+Good news: **You don't need to install the Devvit CLI globally!**
 
-### Install globally via npm:
+Devvit uses `npx`, which comes bundled with Node.js. When you run `npx devvit init`, it automatically downloads and runs the latest version of Devvit without requiring a global installation.
+
+### What is npx?
+
+`npx` is a package runner tool that comes with npm (5.2+). It:
+- Downloads and runs packages on-demand
+- Always uses the latest version
+- Doesn't clutter your global npm packages
+- Avoids permission issues with global installs
+
+### Verify npx is available:
+
+```bash
+npx --version
+```
+
+You should see a version number (e.g., `8.x.x` or higher). If you have Node.js 18+, you already have npx!
+
+### Optional: Install Devvit CLI Globally (Not Recommended)
+
+While not necessary, you *can* install devvit globally if you prefer typing `devvit` instead of `npx devvit`:
 
 ```bash
 npm install -g devvit
 ```
 
-### Verify installation:
-
-```bash
-devvit --version
-```
-
-You should see the Devvit version number (e.g., `0.10.x`).
-
-### Common Issues:
-
-**Permission Error on macOS/Linux:**
-```bash
-sudo npm install -g devvit
-```
-
-**Permission Error Alternative (Recommended):**
-Configure npm to use a different directory:
-```bash
-mkdir ~/.npm-global
-npm config set prefix '~/.npm-global'
-echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
-source ~/.bashrc
-npm install -g devvit
-```
-
-**Windows PowerShell Execution Policy:**
-If you get an execution policy error:
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
+However, using `npx devvit` is the recommended approach as it:
+- Always uses the latest version
+- Avoids permission issues
+- Doesn't require maintenance
 
 ## Step 3: Understanding Authentication
 
@@ -344,7 +338,7 @@ npm run dev
 or
 
 ```bash
-devvit dev
+npx devvit dev
 ```
 
 You should see output like:
@@ -389,53 +383,57 @@ Here are the essential Devvit CLI commands you'll use:
 # The wizard will provide a command like:
 npx devvit init <your-code>
 
-# Start development server
-devvit dev
+# Start development server (from within your project directory)
+npx devvit dev
+# or use the npm script:
+npm run dev
 
 # Build your app
-devvit build
+npx devvit build
 
 # Run type checking
-devvit check
+npx devvit check
 ```
+
+**Note:** All `devvit` commands can be run with `npx devvit` (no global install needed). If you installed devvit globally, you can omit the `npx` prefix.
 
 ### Deployment Commands:
 
 ```bash
 # Upload your app to Reddit
-devvit upload
+npx devvit upload
 
 # Install app on a subreddit
-devvit install <subreddit>
+npx devvit install <subreddit>
 
 # List your apps
-devvit list apps
+npx devvit list apps
 
 # View app logs
-devvit logs <app-name>
+npx devvit logs <app-name>
 ```
 
 ### Account Commands:
 
 ```bash
-# Login to Reddit
-devvit login
+# Login to Reddit (usually not needed - wizard handles this)
+npx devvit login
 
 # Check who you're logged in as
-devvit whoami
+npx devvit whoami
 
 # Logout
-devvit logout
+npx devvit logout
 ```
 
 ### Help Commands:
 
 ```bash
 # General help
-devvit help
+npx devvit help
 
 # Command-specific help
-devvit help <command>
+npx devvit help <command>
 ```
 
 ## Step 10: Configure Git (Optional but Recommended)
@@ -473,12 +471,12 @@ git push -u origin main
 - The wizard provides a one-time code that expires quickly
 - Copy and paste the exact command the wizard provides
 
-### Issue: `command not found: devvit`
+### Issue: `command not found: npx`
 
 **Solution:**
-- The global npm bin folder isn't in your PATH
-- Restart your terminal
-- Or use `npx devvit` instead
+- npx comes with npm, so update npm: `npm install -g npm@latest`
+- Verify Node.js version: `node --version` (should be 18+)
+- Restart your terminal after updating npm
 
 ### Issue: TypeScript errors in VS Code
 
@@ -487,12 +485,13 @@ git push -u origin main
 - Reload VS Code: `Cmd/Ctrl + Shift + P` → "Reload Window"
 - Ensure TypeScript version matches project
 
-### Issue: `devvit dev` fails to start
+### Issue: `npx devvit dev` fails to start
 
 **Solution:**
 - Check that port 3000 isn't already in use
 - Kill process using port: `lsof -ti:3000 | xargs kill` (Mac/Linux)
-- Or specify different port: `devvit dev --port 3001`
+- Or specify different port: `npx devvit dev --port 3001`
+- Alternatively, use the npm script: `npm run dev`
 
 ### Issue: Login redirect doesn't work
 
@@ -507,20 +506,23 @@ Verify your setup is complete:
 
 - [ ] Node.js 18+ installed (`node --version`)
 - [ ] npm installed and working (`npm --version`)
+- [ ] npx available (`npx --version`)
 - [ ] VS Code installed with recommended extensions
 - [ ] Visited `https://developers.reddit.com/new` and completed wizard
 - [ ] Project created and authenticated successfully
 - [ ] Dependencies installed (wizard does this automatically)
 - [ ] Can navigate to project directory (`cd my-first-app`)
-- [ ] Dev server runs successfully (`npm run dev` or `devvit dev`)
+- [ ] Dev server runs successfully (`npm run dev` or `npx devvit dev`)
 - [ ] Can access playground at `http://localhost:3000`
 - [ ] Git initialized (optional)
+
+**Note:** You do NOT need to install Devvit CLI globally - npx handles everything!
 
 ## Best Practices for Development Environment
 
 1. **Keep Node.js updated** - Use LTS versions for stability
 2. **Use a version manager** - nvm makes switching Node versions easy
-3. **Global packages** - Only install Devvit CLI globally, keep others local
+3. **Use npx** - Avoids global package installations and always uses latest versions
 4. **Editor configuration** - Consistent formatting prevents merge conflicts
 5. **Git from the start** - Initialize git early, commit often
 6. **Separate workspace** - Create a dedicated folder for Devvit projects
@@ -532,12 +534,13 @@ With your environment set up, you're ready to build your first Devvit app!
 ## Key Takeaways
 
 1. **Node.js 18+** is required for Devvit development
-2. **Web wizard** at `developers.reddit.com/new` is the starting point for creating projects
-3. **Wizard provides authentication** and generates project creation commands
-4. **Authentication codes** are one-time use and expire quickly
-5. **Project structure** follows standard TypeScript patterns
-6. **Dev server** provides local testing environment
-7. **VS Code** offers the best TypeScript development experience
+2. **No global installation needed** - npx handles running Devvit on-demand
+3. **Web wizard** at `developers.reddit.com/new` is the starting point for creating projects
+4. **Wizard provides authentication** and generates project creation commands
+5. **Authentication codes** are one-time use and expire quickly
+6. **Project structure** follows standard TypeScript patterns
+7. **Dev server** provides local testing environment
+8. **VS Code** offers the best TypeScript development experience
 
 ## Checkpoint Questions
 
@@ -553,7 +556,7 @@ With your environment set up, you're ready to build your first Devvit app!
 1. Node.js 18.x or higher
 2. Visit `https://developers.reddit.com/new` and complete the web wizard
 3. `src/main.tsx` (or `src/main.ts`)
-4. `devvit dev` or `npm run dev`
+4. `npx devvit dev` or `npm run dev`
 5. `http://localhost:3000`
 
 </details>
@@ -569,10 +572,10 @@ With your environment set up, you're ready to build your first Devvit app!
 
 Try these to solidify your setup:
 
-1. Create three different projects using different templates
-2. Start and stop the dev server multiple times
+1. Create three different projects using different templates (visit the wizard each time)
+2. Start and stop the dev server multiple times (`npm run dev`)
 3. Make a small change to `main.tsx` and observe hot-reload
-4. Run `devvit check` to see the type checker in action
+4. Run `npx devvit check` to see the type checker in action
 5. Explore the playground interface at `localhost:3000`
 
 ---
